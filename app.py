@@ -1,3 +1,29 @@
+"""
+Dashboard de demanda energética (Austria) con Dash/Plotly.
+
+Este módulo monta una aplicación Dash que:
+- Carga una serie temporal desde ``datos_energia.csv`` (índice por columna ``time``).
+- Muestra la demanda histórica y una proyección con bandas superior/inferior.
+- Permite al usuario elegir una fecha/hora inicial y el horizonte de proyección.
+
+Requisitos de datos
+-------------------
+Se espera un CSV con, al menos, las columnas:
+- ``time``: marca de tiempo parseable por ``pandas.to_datetime``.
+- ``AT_load_actual_entsoe_transparency``: demanda observada [MW].
+- ``forecast``: proyección puntual [MW].
+- ``Upper bound`` y ``Lower bound``: límites de banda [MW].
+
+Ejecución
+---------
+Ejecute el archivo para iniciar el servidor local de Dash.
+
+Notas
+-----
+- El diseño y controles están en español.
+- Las excepciones por datos faltantes o formatos inválidos no se capturan aquí;
+  se propagan para facilitar el depurado.
+"""
 import dash
 from dash import dcc
 from dash import html
@@ -21,6 +47,30 @@ app.config.suppress_callback_exceptions = True
 
 # Load data from csv
 def load_data():
+    """
+    Carga la serie temporal desde ``datos_energia.csv`` y la prepara para graficar.
+
+    La función:
+    1) lee el CSV,
+    2) convierte la columna ``time`` a ``datetime``,
+    3) establece ``time`` como índice del ``DataFrame``.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Marco con índice temporal y, al menos, las columnas
+        ``AT_load_actual_entsoe_transparency``, ``forecast``,
+        ``Upper bound`` y ``Lower bound``.
+
+    Raises
+    ------
+    FileNotFoundError
+        Si el archivo ``datos_energia.csv`` no está disponible.
+    KeyError
+        Si falta la columna ``time`` u otras columnas esperadas.
+    ValueError
+        Si alguna marca temporal no puede convertirse a ``datetime``.
+    """
     # To do: Completar la función
     data3=pd.read_csv('datos_energia.csv')
     data3['time'] = pd.to_datetime(data3['time'])
@@ -32,6 +82,34 @@ data = load_data()
 
 # Graficar serie
 def plot_series(data, initial_date, proy):
+    """
+    Construye la figura de la serie de tiempo con demanda, proyección y banda.
+
+    La serie se filtra desde ``initial_date`` hasta el penúltimo bloque, recortando
+    ``120 - proy`` puntos del final para que el tramo visible coincida con el
+    horizonte solicitado.
+
+    Parameters
+    ----------
+    data : pandas.DataFrame
+        Serie con índice de fechas y columnas:
+        ``AT_load_actual_entsoe_transparency``, ``forecast``,
+        ``Upper bound`` y ``Lower bound``.
+    initial_date : datetime-like
+        Fecha/hora inicial (inclusive) desde la que se graficará.
+    proy : int
+        Número de horas a proyectar (0–119). Se usa para calcular el recorte final.
+
+    Returns
+    -------
+    plotly.graph_objs.Figure
+        Figura con tres trazas (observado, proyección y banda de confianza).
+
+    Raises
+    ------
+    KeyError
+        Si faltan columnas requeridas en ``data``.
+    """
     data_plot = data.loc[initial_date:]
     data_plot = data_plot[:-(120-proy)]
     fig = go.Figure([
@@ -95,7 +173,12 @@ def plot_series(data, initial_date, proy):
 
 def description_card():
     """
-    :return: A Div containing dashboard title & descriptions.
+    Crea la tarjeta de descripción del panel.
+
+    Returns
+    -------
+    dash.html.Div
+        Componente con el título del panel y un texto introductorio.
     """
     return html.Div(
         id="description-card",
@@ -112,7 +195,15 @@ def description_card():
 
 def generate_control_card():
     """
-    :return: A Div containing controls for graphs.
+    Crea la tarjeta de controles (fecha/hora inicial y horizonte de proyección).
+
+    Utiliza los límites mínimo y máximo del índice de ``data`` para configurar
+    el selector de fecha, y un ``Dropdown`` para la hora (0–24).
+
+    Returns
+    -------
+    dash.html.Div
+        Contenedor con los componentes de entrada del usuario.
     """
     return html.Div(
         id="control-card",
@@ -228,7 +319,31 @@ app.layout = html.Div(
     Input(component_id="slider-proyeccion", component_property="value")]
 )
 def update_output_div(date, hour, proy):
+    """
+    Callback de Dash que actualiza la figura de la serie de tiempo.
 
+    Convierte ``date`` (YYYY-MM-DD) y ``hour`` en un ``Timestamp`` inicial,
+    y genera la figura llamando a ``plot_series``.
+
+    Parameters
+    ----------
+    date : str or None
+        Fecha seleccionada en formato ``YYYY-MM-DD``.
+    hour : int or None
+        Hora del día (0–24) seleccionada por el usuario.
+    proy : int or None
+        Horizonte de proyección en horas (0–119).
+
+    Returns
+    -------
+    plotly.graph_objs.Figure
+        La figura actualizada para el componente ``dcc.Graph``.
+
+    Notes
+    -----
+    Si alguno de los parámetros es ``None``, el callback no devuelve nada
+    (Dash conservará la figura anterior).
+    """
     if ((date is not None) & (hour is not None) & (proy is not None)):
         hour = str(hour)
         minute = str(0)
